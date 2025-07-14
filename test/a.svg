@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.2 (ebf0e940d0, 2025-05-08)"
+   sodipodi:docname="рисунок-1.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.73228114"
+     inkscape:cx="397.38836"
+     inkscape:cy="561.25984"
+     inkscape:window-width="1920"
+     inkscape:window-height="1011"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <inkscape:path-effect
+       effect="bspline"
+       id="path-effect1"
+       is_visible="true"
+       lpeversion="1.3"
+       weight="33.333333"
+       steps="2"
+       helper_size="0"
+       apply_no_weight="true"
+       apply_with_weight="true"
+       only_selected="false"
+       uniform="false" />
+  </defs>
+  <g
+     inkscape:label="Слой 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <path
+       style="fill:none;stroke:#ff0000;stroke-width:0.365001"
+       d="m 113.87408,166.92701 c -18.968973,0.12044 -41.490871,-7.34672 -46.66958,-23.66631 -5.178709,-16.3196 6.985281,-41.49063 25.954515,-41.61082 18.969235,-0.12019 44.742445,24.80997 49.921125,41.12939 5.17867,16.31943 -10.23708,24.0273 -29.20606,24.14774 z"
+       id="path1"
+       inkscape:path-effect="#path-effect1"
+       inkscape:original-d="M 117.42701,174.5146 C 94.905109,167.04744 72.38321,159.58029 49.861313,152.11314 62.025791,126.9411 74.18978,101.77007 86.354014,76.598538 c 25.774236,24.931152 51.547446,49.861312 77.321166,74.791972 -15.41637,7.70818 -30.83212,15.41606 -46.24817,23.12409 z" />
+  </g>
+</svg>
