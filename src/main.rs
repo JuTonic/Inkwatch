@@ -1,116 +1,219 @@
 use derive_more::From;
-use inotify::{EventMask, Inotify, WatchMask};
-use std::env;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::LazyLock;
+use log::warn;
+use notify::{
+    Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+    event::{ModifyKind, RemoveKind, RenameMode},
+};
+use std::{
+    env::{self, Args},
+    ffi::OsStr,
+    fs,
+    path::PathBuf,
+    process::Command,
+    sync::{LazyLock, mpsc},
+};
 
-static WATCHING_DIR: LazyLock<String> = LazyLock::new(|| {
-    let mut args = env::args();
-    args.next();
+static ARGS: LazyLock<Vec<String>> = LazyLock::new(|| env::args().collect());
 
-    let raw_path = args.next().expect("You must provide a pth to watch");
-
-    let path = Path::new(&raw_path);
+static FIGURES_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    let path = ARGS.get(1).expect("You must provide a path to watch");
+    let path = PathBuf::from(path);
 
     if !path.exists() {
-        panic!("directory {} does not exist", raw_path);
+        panic!("directory {:?} does not exist", path);
     }
-
     if !path.is_dir() {
-        panic!("{} is not a directory", raw_path);
+        panic!("{:?} is not a directory", path);
     }
-
-    raw_path
+    path
 });
-static WATCHING_DIR_PATHBUF: LazyLock<PathBuf> =
-    LazyLock::new(|| PathBuf::from(WATCHING_DIR.as_str()));
 
-static SVG: LazyLock<&OsStr> = LazyLock::new(|| OsStr::new("svg"));
-static PDF: LazyLock<&OsStr> = LazyLock::new(|| OsStr::new("pdf"));
-static PDF_LATEX: LazyLock<&OsStr> = LazyLock::new(|| OsStr::new("pdf_latex"));
+static EXT_SVG: LazyLock<&OsStr> = LazyLock::new(|| OsStr::new("svg"));
 
-fn main() {
-    let mut inotify = Inotify::init().expect("Error while initializing inotify instance");
+const INKSCAPE_BIN_ARG: &str = "--inkscape-bin";
 
-    inotify
-        .watches()
-        .add(
-            WATCHING_DIR.as_str(),
-            WatchMask::CREATE | WatchMask::MODIFY | WatchMask::MOVE | WatchMask::DELETE,
-        )
-        .expect("Failed to add file watch");
+const INKSCAPE_BIN: LazyLock<String> = LazyLock::new(|| {
+    let args_iter = (&*ARGS).iter();
 
-    let mut buffer = [0u8; 1024];
-
-    loop {
-        let events = inotify.read_events_blocking(&mut buffer).unwrap();
-
-        for event in events {
-            let path = to_absolute_path(event.name.unwrap());
-
-            if !is_svg_file(&path) {
-                continue;
-            }
-
-            let _ = match event.mask {
-                EventMask::CREATE => {
-                    println!("created!");
-                    svg_to_latex_pdf(&path).expect("failed :(");
-                }
-                EventMask::MOVED_FROM => println!("file moved"),
-                _ => {}
-            };
-        }
+    for arg in args_iter {
+        if arg == INKSCAPE_BIN_ARG {}
     }
-}
-
-fn to_absolute_path(file_path: &OsStr) -> PathBuf {
-    let file_path = PathBuf::from(file_path);
-
-    WATCHING_DIR_PATHBUF.join(file_path)
-}
-
-fn is_svg_file(file_path: &PathBuf) -> bool {
-    return file_path.is_file() && file_path.extension() == Some(&SVG);
-}
+});
+const INKSCAPE_EXPORT_ARG: &str = "--export-filename";
+const INKSCAPE_EXPORT_LATEX_ARG: &str = "--export-latex";
 
 #[derive(From, Debug)]
 enum AppError {
     InvalidUTF8(Option<PathBuf>),
     Io(std::io::Error),
+    FailedToRetrieveFileStem,
+    FailedToRetrieveParentDir,
+    InkscapeError(Vec<u8>),
 }
 
-fn svg_to_hidden_pdf_path(path: &PathBuf) -> Option<PathBuf> {
-    let stem = path.file_stem()?.to_str()?;
-
-    let hidden_pdf_filename = format!(".{stem}.pdf");
-
-    let hidden_pdf_path = path.parent()?.join(hidden_pdf_filename);
-
-    Some(hidden_pdf_path)
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppError::InvalidUTF8(Some(path)) => {
+                write!(f, "Invalid UTF-8 sequence in file: {:?}", path)
+            }
+            AppError::InvalidUTF8(None) => {
+                write!(f, "Invalid UTF-8 sequence in an unknown file")
+            }
+            AppError::Io(err) => {
+                write!(f, "I/O error: {}", err)
+            }
+            AppError::FailedToRetrieveFileStem => {
+                write!(f, "Failed to retrieve file stem from path")
+            }
+            AppError::FailedToRetrieveParentDir => {
+                write!(f, "Failed to retrieve parent directory from path")
+            }
+            AppError::InkscapeError(output) => {
+                // Attempt to convert output to UTF-8 if possible
+                match std::str::from_utf8(output) {
+                    Ok(s) => write!(f, "Inkscape error: {}", s.trim()),
+                    Err(_) => write!(f, "Inkscape error with non-UTF8 output: {:?}", output),
+                }
+            }
+        }
+    }
 }
 
-const INKSCAPE_CMD: &'static str = "inkscape";
-const INKSCAPE_EXPORT_AS_PDF_ARG: &'static str = "--export-filename";
-const INKSCAPE_EXPORT_AS_LATEX_PDF_ARG: &'static str = "--export-latex";
+fn main() {
+    let (tx, rx) = mpsc::channel::<Result<Event, notify::Error>>();
 
-fn svg_to_latex_pdf(path: &PathBuf) -> Result<bool, AppError> {
-    let hidden_pdf_path = svg_to_hidden_pdf_path(path).ok_or(Some(path.clone()))?;
+    let mut watcher: RecommendedWatcher =
+        notify::recommended_watcher(tx).expect("Failed to initialize watcher");
 
-    let hidden_pdf_path_str = hidden_pdf_path.to_str().ok_or(None)?;
+    watcher
+        .watch(&*FIGURES_DIR, RecursiveMode::Recursive)
+        .expect(format!("Failed to watch directory {:?}", FIGURES_DIR).as_str());
 
-    let path_str = path.to_str().ok_or(Some(path.clone()))?;
+    for event_result in rx {
+        match event_result {
+            Ok(event) => handle_event(event),
+            Err(e) => eprintln!("Watch error: {:?}", e),
+        }
+    }
+}
+
+fn handle_event(event: Event) {
+    let Some(path) = event.paths.get(0) else {
+        return;
+    };
+
+    if !is_svg_file(path) {
+        return;
+    }
+
+    match event.kind {
+        EventKind::Create(_) | EventKind::Modify(ModifyKind::Data(_)) => {
+            if let Err(e) = convert_svg_to_pdf_and_tex(path) {
+                eprintln!("Failed to convert SVG to PDF/PDF_TEX: {}", e);
+            };
+        }
+        EventKind::Remove(RemoveKind::File) => {
+            if let Err(e) = remove_generated_files(path) {
+                eprintln!("Cleanup error: {}", e);
+            }
+        }
+        EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+            if let Some(new_path) = event.paths.get(1) {
+                if let Err(e) = rename_generated_files(path, new_path) {
+                    eprintln!("Rename error: {}", e);
+                }
+            }
+        }
+
+        _ => {}
+    };
+}
+
+fn is_svg_file(path: &PathBuf) -> bool {
+    path.extension() == Some(&EXT_SVG) && !path.is_dir()
+}
+
+struct GeneratedPdfAndTex {
+    pub pdf: PathBuf,
+    pub pdf_tex: PathBuf,
+}
+
+impl GeneratedPdfAndTex {
+    pub fn from_svg(svg_path: &PathBuf) -> Result<Self, AppError> {
+        let stem = svg_path
+            .file_stem()
+            .ok_or(AppError::FailedToRetrieveFileStem)?;
+        let stem = stem
+            .to_str()
+            .ok_or(AppError::InvalidUTF8(Some(svg_path.clone())))?;
+
+        let pdf = svg_path
+            .parent()
+            .ok_or(AppError::FailedToRetrieveParentDir)?
+            .join(format!(".{}.pdf", stem));
+        let pdf_latex = svg_path
+            .parent()
+            .ok_or(AppError::FailedToRetrieveParentDir)?
+            .join(format!(".{}.pdf_tex", stem));
+
+        Ok(GeneratedPdfAndTex {
+            pdf,
+            pdf_tex: pdf_latex,
+        })
+    }
+}
+
+fn convert_svg_to_pdf_and_tex(svg_path: &PathBuf) -> Result<bool, AppError> {
+    let GeneratedPdfAndTex { pdf, .. } = GeneratedPdfAndTex::from_svg(svg_path)?;
+
+    let pdf_str = pdf.to_str().ok_or(None)?;
+
+    let svg_path_str = svg_path.to_str().ok_or(Some(svg_path.clone()))?;
 
     let output = Command::new(INKSCAPE_CMD)
         .args([
-            INKSCAPE_EXPORT_AS_PDF_ARG,
-            hidden_pdf_path_str,
-            INKSCAPE_EXPORT_AS_LATEX_PDF_ARG,
-            path_str,
+            INKSCAPE_EXPORT_ARG,
+            pdf_str,
+            INKSCAPE_EXPORT_LATEX_ARG,
+            svg_path_str,
         ])
         .output()?;
 
-    Ok(output.status.success())
+    if output.status.success() {
+        Ok(true)
+    } else {
+        Err(AppError::InkscapeError(output.stderr))
+    }
+}
+
+fn remove_generated_files(svg_path: &PathBuf) -> Result<(), AppError> {
+    let pdf_and_tex = GeneratedPdfAndTex::from_svg(svg_path)?;
+    if pdf_and_tex.pdf.exists() {
+        fs::remove_file(pdf_and_tex.pdf)?;
+    } else {
+        warn!("does not exist: {:?}", pdf_and_tex.pdf);
+    }
+    if pdf_and_tex.pdf_tex.exists() {
+        fs::remove_file(pdf_and_tex.pdf_tex)?;
+    } else {
+        warn!("does not exist: {:?}", pdf_and_tex.pdf_tex);
+    }
+    Ok(())
+}
+
+fn rename_generated_files(svg_path_old: &PathBuf, svg_path_new: &PathBuf) -> Result<(), AppError> {
+    let pdf_and_tex_old = GeneratedPdfAndTex::from_svg(svg_path_old)?;
+    let pdf_and_tex_new = GeneratedPdfAndTex::from_svg(svg_path_new)?;
+    if pdf_and_tex_old.pdf.exists() {
+        fs::rename(pdf_and_tex_old.pdf, pdf_and_tex_new.pdf)?;
+    } else {
+        warn!("does not exist: {:?}", pdf_and_tex_old.pdf);
+    }
+    if pdf_and_tex_old.pdf_tex.exists() {
+        fs::rename(pdf_and_tex_old.pdf_tex, pdf_and_tex_new.pdf_tex)?;
+    } else {
+        warn!("does not exist: {:?}", pdf_and_tex_old.pdf_tex);
+    }
+    Ok(())
 }
