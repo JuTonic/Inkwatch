@@ -1,94 +1,42 @@
-use derive_more::From;
+use args::CONFIG;
+use error::AppError;
 use log::warn;
 use notify::{
     Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
     event::{ModifyKind, RemoveKind, RenameMode},
 };
 use std::{
-    env::{self, Args},
     ffi::OsStr,
-    fs,
-    path::PathBuf,
+    fs::{self, DirEntry},
+    io,
+    path::{Path, PathBuf},
     process::Command,
     sync::{LazyLock, mpsc},
 };
 
-static ARGS: LazyLock<Vec<String>> = LazyLock::new(|| env::args().collect());
+mod args;
+mod error;
+mod walk_dirs;
 
-static FIGURES_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
-    let path = ARGS.get(1).expect("You must provide a path to watch");
-    let path = PathBuf::from(path);
-
-    if !path.exists() {
-        panic!("directory {:?} does not exist", path);
-    }
-    if !path.is_dir() {
-        panic!("{:?} is not a directory", path);
-    }
-    path
-});
+use walk_dirs::walk_dirs;
 
 static EXT_SVG: LazyLock<&OsStr> = LazyLock::new(|| OsStr::new("svg"));
-
-const INKSCAPE_BIN_ARG: &str = "--inkscape-bin";
-
-const INKSCAPE_BIN: LazyLock<String> = LazyLock::new(|| {
-    let args_iter = (&*ARGS).iter();
-
-    for arg in args_iter {
-        if arg == INKSCAPE_BIN_ARG {}
-    }
-});
 const INKSCAPE_EXPORT_ARG: &str = "--export-filename";
 const INKSCAPE_EXPORT_LATEX_ARG: &str = "--export-latex";
 
-#[derive(From, Debug)]
-enum AppError {
-    InvalidUTF8(Option<PathBuf>),
-    Io(std::io::Error),
-    FailedToRetrieveFileStem,
-    FailedToRetrieveParentDir,
-    InkscapeError(Vec<u8>),
-}
-
-impl std::fmt::Display for AppError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AppError::InvalidUTF8(Some(path)) => {
-                write!(f, "Invalid UTF-8 sequence in file: {:?}", path)
-            }
-            AppError::InvalidUTF8(None) => {
-                write!(f, "Invalid UTF-8 sequence in an unknown file")
-            }
-            AppError::Io(err) => {
-                write!(f, "I/O error: {}", err)
-            }
-            AppError::FailedToRetrieveFileStem => {
-                write!(f, "Failed to retrieve file stem from path")
-            }
-            AppError::FailedToRetrieveParentDir => {
-                write!(f, "Failed to retrieve parent directory from path")
-            }
-            AppError::InkscapeError(output) => {
-                // Attempt to convert output to UTF-8 if possible
-                match std::str::from_utf8(output) {
-                    Ok(s) => write!(f, "Inkscape error: {}", s.trim()),
-                    Err(_) => write!(f, "Inkscape error with non-UTF8 output: {:?}", output),
-                }
-            }
-        }
-    }
-}
-
 fn main() {
+    let _ = &*CONFIG;
+
+    dbg!(regenerate_all_aux_files());
+
     let (tx, rx) = mpsc::channel::<Result<Event, notify::Error>>();
 
     let mut watcher: RecommendedWatcher =
         notify::recommended_watcher(tx).expect("Failed to initialize watcher");
 
     watcher
-        .watch(&*FIGURES_DIR, RecursiveMode::Recursive)
-        .expect(format!("Failed to watch directory {:?}", FIGURES_DIR).as_str());
+        .watch(&*CONFIG.watch_dir, RecursiveMode::Recursive)
+        .expect(format!("Failed to watch directory {:?}", &*CONFIG.watch_dir).as_str());
 
     for event_result in rx {
         match event_result {
@@ -108,24 +56,19 @@ fn handle_event(event: Event) {
     }
 
     match event.kind {
-        EventKind::Create(_) | EventKind::Modify(ModifyKind::Data(_)) => {
+        EventKind::Create(_)
+        | EventKind::Modify(ModifyKind::Data(_))
+        | EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
             if let Err(e) = convert_svg_to_pdf_and_tex(path) {
                 eprintln!("Failed to convert SVG to PDF/PDF_TEX: {}", e);
             };
         }
-        EventKind::Remove(RemoveKind::File) => {
+        EventKind::Remove(RemoveKind::File)
+        | EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
             if let Err(e) = remove_generated_files(path) {
                 eprintln!("Cleanup error: {}", e);
             }
         }
-        EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
-            if let Some(new_path) = event.paths.get(1) {
-                if let Err(e) = rename_generated_files(path, new_path) {
-                    eprintln!("Rename error: {}", e);
-                }
-            }
-        }
-
         _ => {}
     };
 }
@@ -139,6 +82,9 @@ struct GeneratedPdfAndTex {
     pub pdf_tex: PathBuf,
 }
 
+const HIDE_PREFIX: char = '.';
+const PDF_EXT: &str = "pdf";
+const PDF_TEX_EXT: &str = "pdf_tex";
 impl GeneratedPdfAndTex {
     pub fn from_svg(svg_path: &PathBuf) -> Result<Self, AppError> {
         let stem = svg_path
@@ -148,19 +94,24 @@ impl GeneratedPdfAndTex {
             .to_str()
             .ok_or(AppError::InvalidUTF8(Some(svg_path.clone())))?;
 
+        let mut pdf_filename = format!("{}.{}", stem, PDF_EXT);
+        let mut pdf_tex_filename = format!("{}.{}", stem, PDF_TEX_EXT);
+
+        if CONFIG.hide_aux_files {
+            pdf_filename.insert(0, HIDE_PREFIX);
+            pdf_tex_filename.insert(0, HIDE_PREFIX);
+        }
+
         let pdf = svg_path
             .parent()
             .ok_or(AppError::FailedToRetrieveParentDir)?
-            .join(format!(".{}.pdf", stem));
-        let pdf_latex = svg_path
+            .join(pdf_filename);
+        let pdf_tex = svg_path
             .parent()
             .ok_or(AppError::FailedToRetrieveParentDir)?
-            .join(format!(".{}.pdf_tex", stem));
+            .join(pdf_tex_filename);
 
-        Ok(GeneratedPdfAndTex {
-            pdf,
-            pdf_tex: pdf_latex,
-        })
+        Ok(GeneratedPdfAndTex { pdf, pdf_tex })
     }
 }
 
@@ -171,7 +122,7 @@ fn convert_svg_to_pdf_and_tex(svg_path: &PathBuf) -> Result<bool, AppError> {
 
     let svg_path_str = svg_path.to_str().ok_or(Some(svg_path.clone()))?;
 
-    let output = Command::new(INKSCAPE_CMD)
+    let output = Command::new(&*CONFIG.inkscape_path)
         .args([
             INKSCAPE_EXPORT_ARG,
             pdf_str,
@@ -202,18 +153,14 @@ fn remove_generated_files(svg_path: &PathBuf) -> Result<(), AppError> {
     Ok(())
 }
 
-fn rename_generated_files(svg_path_old: &PathBuf, svg_path_new: &PathBuf) -> Result<(), AppError> {
-    let pdf_and_tex_old = GeneratedPdfAndTex::from_svg(svg_path_old)?;
-    let pdf_and_tex_new = GeneratedPdfAndTex::from_svg(svg_path_new)?;
-    if pdf_and_tex_old.pdf.exists() {
-        fs::rename(pdf_and_tex_old.pdf, pdf_and_tex_new.pdf)?;
-    } else {
-        warn!("does not exist: {:?}", pdf_and_tex_old.pdf);
+fn regenerate_all_aux_files() -> Result<(), AppError> {
+    for res in walk_dirs(CONFIG.watch_dir.as_path())? {
+        let path = res?.path();
+
+        if is_svg_file(&path) {
+            convert_svg_to_pdf_and_tex(&path.to_path_buf())?;
+        }
     }
-    if pdf_and_tex_old.pdf_tex.exists() {
-        fs::rename(pdf_and_tex_old.pdf_tex, pdf_and_tex_new.pdf_tex)?;
-    } else {
-        warn!("does not exist: {:?}", pdf_and_tex_old.pdf_tex);
-    }
-    Ok(())
+
+    return Ok(());
 }

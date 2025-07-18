@@ -1,5 +1,5 @@
 [package]
-name = "inkscape-latex"
+name = "inkfigd"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,6 +8,7 @@ clap = { version = "4.5.41", features = ["derive"] }
 derive_more = {version = "2.0.1", features = ["from"]}
 log = "0.4.27"
 notify = "8.1.0"
+which = "8.0.0"
 
 [profile.release]
 opt-level = 3

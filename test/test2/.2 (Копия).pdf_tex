@@ -1,6 +1,6 @@
 %% Creator: Inkscape 1.4.2 (ebf0e940d0, 2025-05-08), www.inkscape.org
 %% PDF/EPS/PS + LaTeX output extension by Johan Engelen, 2010
-%% Accompanies image file '.рисунок-1.pdf' (pdf, eps, ps)
+%% Accompanies image file '.2 (Копия).pdf' (pdf, eps, ps)
 %%
 %% To include the image in your LaTeX document, write
 %%   \input{<filename>.pdf_tex}
@@ -53,6 +53,6 @@
   \begin{picture}(1,1.41428571)%
     \lineheight{1}%
     \setlength\tabcolsep{0pt}%
-    \put(0,0){\includegraphics[width=\unitlength,page=1]{.рисунок-1.pdf}}%
+    \put(0,0){\includegraphics[width=\unitlength,page=1]{.2 (Копия).pdf}}%
   \end{picture}%
 \endgroup%
