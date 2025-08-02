@@ -23,7 +23,7 @@ If you delete `picture.svg`, the corresponding `.pdf` and `.pdf_tex` files will 
 
 Avaliable options are:
 
-```bash
+```
 inkwatch [DIR] (OPTIONS)
 
 [DIR] - REQUIRED
