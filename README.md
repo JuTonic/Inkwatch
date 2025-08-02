@@ -9,10 +9,19 @@
 To start watching the `./figures` directory for changes, simply run:
 
 ```bash
-    inkscape ./figures
+inkscape ./figures
 ```
 
-Whenever you create or save a file like `bash ./figures/picture.svg`, inkwatch will automatically generate `./figures/picture.pdf` and `./figures/picture.pdf_tex`. If you delete `picture.svg`, the corresponding `.pdf` and `.pdf_tex` files will be deleted.
+Whenever you create or save a file like:
+```bash
+./figures/picture.svg
+```
+inkwatch will automatically generate overlay files:
+```bash
+./figures/picture.pdf
+./figures/picture.pdf_tex
+```
+If you delete `picture.svg`, the corresponding `.pdf` and `.pdf_tex` files will be deleted.
 
 Avaliable options are:
 
@@ -36,7 +45,7 @@ inkwatch [DIR] (OPTIONS)
 ## Build
 
 Prerequisites:
-- Rust toolchain
+- Rust toolchain (see [rustup](https://rustup.rs/))
 
 Clone the repo and build it:
 
@@ -45,11 +54,11 @@ git clone https://github.com/JuTonic/inkwatch.git
 cd inkwatch
 cargo build --release
 ```
-
 The binary will be created at `./target/release/inkwatch`.
 
-To install system-wide run (assuming `~/.cargo/bin` is in your `PATH`):
+To install system-wide run:
 
 ```bash
 cargo install --path .
 ```
+Make sure that `~/.cargo/bin` is in your `PATH`
