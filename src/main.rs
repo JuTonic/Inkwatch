@@ -8,7 +8,7 @@ use notify::{
 use std::{
     ffi::OsStr,
     fs::{self, DirEntry},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{LazyLock, mpsc},
 };
@@ -31,7 +31,7 @@ fn main() {
     if CONFIG.regenerate {
         if let Err(e) = regenerate_all_aux_files() {
             // TODO: Make a more meaningful error handling
-            warn!("{}", e);
+            warn!("{e}");
         }
     }
 
@@ -47,19 +47,19 @@ fn main() {
     };
 
     watcher
-        .watch(&*CONFIG.watch_dir, recursive_mode)
-        .expect(format!("Failed to watch directory {:?}", &*CONFIG.watch_dir).as_str());
+        .watch(&CONFIG.watch_dir, recursive_mode)
+        .unwrap_or_else(|_| panic!("Failed to watch directory {}", &CONFIG.watch_dir.display()));
 
     for event_result in rx {
         match event_result {
-            Ok(event) => spawn(move || handle_event(event)),
-            Err(e) => eprintln!("Watch error: {:?}", e),
+            Ok(event) => spawn(move || handle_event(&event)),
+            Err(e) => eprintln!("Watch error: {e:?}"),
         }
     }
 }
 
-fn handle_event(event: Event) {
-    let Some(path) = event.paths.get(0) else {
+fn handle_event(event: &Event) {
+    let Some(path) = event.paths.first() else {
         return;
     };
 
@@ -69,23 +69,22 @@ fn handle_event(event: Event) {
 
     match event.kind {
         EventKind::Create(_)
-        | EventKind::Modify(ModifyKind::Data(_))
-        | EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
+        | EventKind::Modify(ModifyKind::Data(_) | ModifyKind::Name(RenameMode::To)) => {
             if let Err(e) = convert_svg_to_pdf_and_tex(path) {
-                eprintln!("Failed to convert SVG to PDF/PDF_TEX: {}", e);
-            };
+                eprintln!("Failed to convert SVG to PDF/PDF_TEX: {e}");
+            }
         }
         EventKind::Remove(RemoveKind::File)
         | EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
             if let Err(e) = remove_generated_files(path) {
-                eprintln!("Cleanup error: {}", e);
+                eprintln!("Cleanup error: {e}");
             }
         }
         _ => {}
-    };
+    }
 }
 
-fn is_svg_file(path: &PathBuf) -> bool {
+fn is_svg_file(path: &Path) -> bool {
     path.extension() == Some(&EXT_SVG) && !path.is_dir()
 }
 
@@ -97,13 +96,13 @@ struct AuxFiles {
 const PDF_EXT: &str = "pdf";
 const PDF_TEX_EXT: &str = "pdf_tex";
 impl AuxFiles {
-    pub fn from_svg(svg_path: &PathBuf) -> Result<Self, AppError> {
+    pub fn from_svg(svg_path: &Path) -> Result<Self, AppError> {
         let stem = svg_path
             .file_stem()
             .ok_or(AppError::FailedToRetrieveFileStem)?;
         let stem = stem
             .to_str()
-            .ok_or(AppError::InvalidUTF8(Some(svg_path.clone())))?;
+            .ok_or_else(|| AppError::InvalidUTF8(Some(svg_path.to_path_buf())))?;
 
         let pdf_filename = format!("{}{}.{}", CONFIG.aux_prefix, stem, PDF_EXT);
         let pdf_tex_filename = format!("{}{}.{}", CONFIG.aux_prefix, stem, PDF_TEX_EXT);
@@ -117,16 +116,18 @@ impl AuxFiles {
             .ok_or(AppError::FailedToRetrieveParentDir)?
             .join(pdf_tex_filename);
 
-        Ok(AuxFiles { pdf, pdf_tex })
+        Ok(Self { pdf, pdf_tex })
     }
 }
 
-fn convert_svg_to_pdf_and_tex(svg_path: &PathBuf) -> Result<bool, AppError> {
+fn convert_svg_to_pdf_and_tex(svg_path: &Path) -> Result<bool, AppError> {
     let AuxFiles { pdf, .. } = AuxFiles::from_svg(svg_path)?;
 
     let pdf_str = pdf.to_str().ok_or(None)?;
 
-    let svg_path_str = svg_path.to_str().ok_or(Some(svg_path.clone()))?;
+    let svg_path_str = svg_path
+        .to_str()
+        .ok_or_else(|| Some(svg_path.to_path_buf()))?;
 
     let output = Command::new(&*CONFIG.inkscape_path)
         .args([
@@ -144,17 +145,17 @@ fn convert_svg_to_pdf_and_tex(svg_path: &PathBuf) -> Result<bool, AppError> {
     }
 }
 
-fn remove_generated_files(svg_path: &PathBuf) -> Result<(), AppError> {
+fn remove_generated_files(svg_path: &Path) -> Result<(), AppError> {
     let pdf_and_tex = AuxFiles::from_svg(svg_path)?;
     if pdf_and_tex.pdf.exists() {
         fs::remove_file(pdf_and_tex.pdf)?;
     } else {
-        warn!("does not exist: {:?}", pdf_and_tex.pdf);
+        warn!("does not exist: {}", pdf_and_tex.pdf.display());
     }
     if pdf_and_tex.pdf_tex.exists() {
         fs::remove_file(pdf_and_tex.pdf_tex)?;
     } else {
-        warn!("does not exist: {:?}", pdf_and_tex.pdf_tex);
+        warn!("does not exist: {}", pdf_and_tex.pdf_tex.display());
     }
     Ok(())
 }
@@ -177,5 +178,5 @@ fn regenerate_all_aux_files() -> Result<(), AppError> {
         }
     });
 
-    return Ok(());
+    Ok(())
 }

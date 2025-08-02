@@ -14,26 +14,26 @@ pub enum AppError {
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AppError::InvalidUTF8(Some(path)) => {
-                write!(f, "Invalid UTF-8 sequence in file: {:?}", path)
+            Self::InvalidUTF8(Some(path)) => {
+                write!(f, "Invalid UTF-8 sequence in file: {}", path.display())
             }
-            AppError::InvalidUTF8(None) => {
+            Self::InvalidUTF8(None) => {
                 write!(f, "Invalid UTF-8 sequence in an unknown file")
             }
-            AppError::Io(err) => {
-                write!(f, "I/O error: {}", err)
+            Self::Io(err) => {
+                write!(f, "I/O error: {err}")
             }
-            AppError::FailedToRetrieveFileStem => {
+            Self::FailedToRetrieveFileStem => {
                 write!(f, "Failed to retrieve file stem from path")
             }
-            AppError::FailedToRetrieveParentDir => {
+            Self::FailedToRetrieveParentDir => {
                 write!(f, "Failed to retrieve parent directory from path")
             }
-            AppError::InkscapeError(output) => {
+            Self::InkscapeError(output) => {
                 // Attempt to convert output to UTF-8 if possible
                 match std::str::from_utf8(output) {
                     Ok(s) => write!(f, "Inkscape error: {}", s.trim()),
-                    Err(_) => write!(f, "Inkscape error with non-UTF8 output: {:?}", output),
+                    Err(_) => write!(f, "Inkscape error with non-UTF8 output: {output:?}"),
                 }
             }
         }

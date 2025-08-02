@@ -51,10 +51,7 @@ impl PossibleArgs {
     }
 
     pub fn is_not_an_arg(str: &str) -> bool {
-        match Self::from(str) {
-            Self::Other => true,
-            _ => false,
-        }
+        matches!(Self::from(str), Self::Other)
     }
 }
 
@@ -63,7 +60,7 @@ impl Config {
         let mut args = env::args().skip(1);
         let first = args
             .next()
-            .ok_or(ParseError::MissingArgument("DIR".to_string()))?;
+            .ok_or_else(|| ParseError::MissingArgument("DIR".to_string()))?;
 
         match PossibleArgs::from(&first) {
             PossibleArgs::Other => {}
@@ -80,8 +77,7 @@ impl Config {
 
         while let Some(arg) = args.next() {
             match PossibleArgs::from(&arg) {
-                PossibleArgs::Help => return Err(ParseError::Help),
-                PossibleArgs::Version => return Err(ParseError::Help),
+                PossibleArgs::Help | PossibleArgs::Version => return Err(ParseError::Help),
                 PossibleArgs::InkscapePath => {
                     inkscape_path = if let Some(path) = args.next() {
                         if PossibleArgs::is_not_an_arg(&path) {
@@ -114,24 +110,22 @@ impl Config {
                 }
                 PossibleArgs::DoNotRegenerate => regenerate = false,
                 PossibleArgs::NotRecursively => recursively = false,
-                _ => {
+                PossibleArgs::Other => {
                     return Err(ParseError::UnexpectedArgument(format!(
-                        "Not a valid argument -> {} <-",
-                        arg
+                        "Not a valid argument -> {arg} <-"
                     )));
                 }
             }
         }
 
-        let inkscape_path = match inkscape_path {
-            Some(p) => p,
-            None => {
-                let opt = which(INKSCAPE_BIN)?;
-                opt.ok_or(ParseError::NotInPath(INKSCAPE_BIN.to_string()))?
-            }
+        let inkscape_path = if let Some(p) = inkscape_path {
+            p
+        } else {
+            let opt = which(INKSCAPE_BIN)?;
+            opt.ok_or_else(|| ParseError::NotInPath(INKSCAPE_BIN.to_string()))?
         };
 
-        Ok(Config {
+        Ok(Self {
             watch_dir,
             inkscape_path,
             aux_prefix,
@@ -183,17 +177,17 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| match Config::parse() {
                 eprintln!("Error: path does not exist: {}", path.display());
             }
             ParseError::NotInPath(bin) => {
-                eprintln!("Error: '{}' not found in $PATH", bin);
+                eprintln!("Error: '{bin}' not found in $PATH");
             }
             ParseError::WhichError(err) => {
-                eprintln!("Error while locating '{}': {}", INKSCAPE_BIN, err);
+                eprintln!("Error while locating '{INKSCAPE_BIN}': {err}");
             }
             ParseError::MissingArgument(arg) => {
-                eprintln!("{}", arg);
+                eprintln!("{arg}");
                 // print_help();
             }
             ParseError::UnexpectedArgument(arg) => {
-                eprintln!("Unexpected argument: {}", arg);
+                eprintln!("Unexpected argument: {arg}");
                 // print_help();
             }
         }
@@ -206,7 +200,7 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| match Config::parse() {
 fn print_help() {
     eprintln!(
         "
-{} [DIR] [OPTIONS]
+{BIN_NAME} [DIR] [OPTIONS]
 
 DIR:
   directory to watch for changes
@@ -217,11 +211,10 @@ OPTIONS:
   --inkscape-path [PATH]  Set path to inkscape binary
   --aux-prefix [STR]      Set prefix added to pdf and pdf_tex files
   --do-not-regenerate     Do not regenerate pdf and pdf_tex files at first run
-  --not-recursively       Do not watch for changes in subdirectories",
-        BIN_NAME
+  --not-recursively       Do not watch for changes in subdirectories"
     );
 }
 
 fn print_version() {
-    println!("{} {}", BIN_NAME, VERSION)
+    println!("{BIN_NAME} {VERSION}");
 }

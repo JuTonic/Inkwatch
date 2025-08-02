@@ -13,7 +13,7 @@ impl RecursiveDirIter {
         if root.is_dir() {
             stack.push_front(fs::read_dir(root)?);
         }
-        return Ok(RecursiveDirIter { stack });
+        Ok(Self { stack })
     }
 }
 
@@ -45,5 +45,5 @@ impl Iterator for RecursiveDirIter {
 }
 
 pub fn walk_dirs(path: &Path) -> io::Result<RecursiveDirIter> {
-    return RecursiveDirIter::new(path);
+    RecursiveDirIter::new(path)
 }

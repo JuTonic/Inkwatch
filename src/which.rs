@@ -1,6 +1,6 @@
 use derive_more::From;
 use log::warn;
-use std::{env, fmt, fs, io, path::PathBuf};
+use std::{env, ffi::OsStr, fmt, fs, io, path::PathBuf};
 
 #[derive(From, Debug)]
 pub enum WhichError {
@@ -11,8 +11,8 @@ pub enum WhichError {
 impl fmt::Display for WhichError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WhichError::VarError(e) => write!(f, "Environment variable error: {}", e),
-            WhichError::Io(e) => write!(f, "I/O error: {}", e),
+            Self::VarError(e) => write!(f, "Environment variable error: {e}"),
+            Self::Io(e) => write!(f, "I/O error: {e}"),
         }
     }
 }
@@ -31,16 +31,16 @@ pub fn which(file_name: &str) -> Result<Option<PathBuf>, WhichError> {
             match result {
                 Ok(entry) => {
                     let path = entry.path();
-                    if path.is_file() && path.file_name().unwrap() == file_name {
+                    if path.is_file() && path.file_name() == Some(OsStr::new(file_name)) {
                         return Ok(Some(path));
                     }
                 }
                 Err(err) => {
-                    warn!("Failed to read file in path: {}", err);
+                    warn!("Failed to read file in path: {err}");
                 }
             }
         }
     }
 
-    return Ok(None);
+    Ok(None)
 }
