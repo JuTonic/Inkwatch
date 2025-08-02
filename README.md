@@ -2,8 +2,6 @@
 
 **Inkwatch** is a background CLI tool that watches a directory for changes to SVG files and automatically exports them to PDF and LaTeX overlay files using [Inkscape](https://inkscape.org). It is designed to be used alongside the [inkfig.nvim](https://github.com/JuTonic/inkfig.nvim) plugin to automate figure workflows in LaTeX documents.
 
----
-
 ## Usage
 
 To start watching the `./figures` directory for changes, simply run:
@@ -39,8 +37,6 @@ inkwatch [DIR] (OPTIONS)
   --do-not-regenerate     Do not regenerate pdf and pdf_tex files at first run
   --not-recursively       Do not watch for changes in subdirectories
 ```
-
----
 
 ## Build
 
