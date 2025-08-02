@@ -8,8 +8,7 @@ use notify::{
 use std::{
     ffi::OsStr,
     fs::{self, DirEntry},
-    io,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
     sync::{LazyLock, mpsc},
 };
@@ -17,7 +16,9 @@ use std::{
 mod args;
 mod error;
 mod walk_dirs;
+mod which;
 
+use rayon::{prelude::*, spawn};
 use walk_dirs::walk_dirs;
 
 static EXT_SVG: LazyLock<&OsStr> = LazyLock::new(|| OsStr::new("svg"));
@@ -27,20 +28,31 @@ const INKSCAPE_EXPORT_LATEX_ARG: &str = "--export-latex";
 fn main() {
     let _ = &*CONFIG;
 
-    dbg!(regenerate_all_aux_files());
+    if CONFIG.regenerate {
+        if let Err(e) = regenerate_all_aux_files() {
+            // TODO: Make a more meaningful error handling
+            warn!("{}", e);
+        }
+    }
 
     let (tx, rx) = mpsc::channel::<Result<Event, notify::Error>>();
 
     let mut watcher: RecommendedWatcher =
         notify::recommended_watcher(tx).expect("Failed to initialize watcher");
 
+    let recursive_mode = if CONFIG.recursively {
+        RecursiveMode::Recursive
+    } else {
+        RecursiveMode::NonRecursive
+    };
+
     watcher
-        .watch(&*CONFIG.watch_dir, RecursiveMode::Recursive)
+        .watch(&*CONFIG.watch_dir, recursive_mode)
         .expect(format!("Failed to watch directory {:?}", &*CONFIG.watch_dir).as_str());
 
     for event_result in rx {
         match event_result {
-            Ok(event) => handle_event(event),
+            Ok(event) => spawn(move || handle_event(event)),
             Err(e) => eprintln!("Watch error: {:?}", e),
         }
     }
@@ -77,15 +89,14 @@ fn is_svg_file(path: &PathBuf) -> bool {
     path.extension() == Some(&EXT_SVG) && !path.is_dir()
 }
 
-struct GeneratedPdfAndTex {
+struct AuxFiles {
     pub pdf: PathBuf,
     pub pdf_tex: PathBuf,
 }
 
-const HIDE_PREFIX: char = '.';
 const PDF_EXT: &str = "pdf";
 const PDF_TEX_EXT: &str = "pdf_tex";
-impl GeneratedPdfAndTex {
+impl AuxFiles {
     pub fn from_svg(svg_path: &PathBuf) -> Result<Self, AppError> {
         let stem = svg_path
             .file_stem()
@@ -94,13 +105,8 @@ impl GeneratedPdfAndTex {
             .to_str()
             .ok_or(AppError::InvalidUTF8(Some(svg_path.clone())))?;
 
-        let mut pdf_filename = format!("{}.{}", stem, PDF_EXT);
-        let mut pdf_tex_filename = format!("{}.{}", stem, PDF_TEX_EXT);
-
-        if CONFIG.hide_aux_files {
-            pdf_filename.insert(0, HIDE_PREFIX);
-            pdf_tex_filename.insert(0, HIDE_PREFIX);
-        }
+        let pdf_filename = format!("{}{}.{}", CONFIG.aux_prefix, stem, PDF_EXT);
+        let pdf_tex_filename = format!("{}{}.{}", CONFIG.aux_prefix, stem, PDF_TEX_EXT);
 
         let pdf = svg_path
             .parent()
@@ -111,12 +117,12 @@ impl GeneratedPdfAndTex {
             .ok_or(AppError::FailedToRetrieveParentDir)?
             .join(pdf_tex_filename);
 
-        Ok(GeneratedPdfAndTex { pdf, pdf_tex })
+        Ok(AuxFiles { pdf, pdf_tex })
     }
 }
 
 fn convert_svg_to_pdf_and_tex(svg_path: &PathBuf) -> Result<bool, AppError> {
-    let GeneratedPdfAndTex { pdf, .. } = GeneratedPdfAndTex::from_svg(svg_path)?;
+    let AuxFiles { pdf, .. } = AuxFiles::from_svg(svg_path)?;
 
     let pdf_str = pdf.to_str().ok_or(None)?;
 
@@ -139,7 +145,7 @@ fn convert_svg_to_pdf_and_tex(svg_path: &PathBuf) -> Result<bool, AppError> {
 }
 
 fn remove_generated_files(svg_path: &PathBuf) -> Result<(), AppError> {
-    let pdf_and_tex = GeneratedPdfAndTex::from_svg(svg_path)?;
+    let pdf_and_tex = AuxFiles::from_svg(svg_path)?;
     if pdf_and_tex.pdf.exists() {
         fs::remove_file(pdf_and_tex.pdf)?;
     } else {
@@ -154,13 +160,22 @@ fn remove_generated_files(svg_path: &PathBuf) -> Result<(), AppError> {
 }
 
 fn regenerate_all_aux_files() -> Result<(), AppError> {
-    for res in walk_dirs(CONFIG.watch_dir.as_path())? {
-        let path = res?.path();
+    let watch_dir = CONFIG.watch_dir.as_path();
 
+    let entries: Vec<DirEntry> = if CONFIG.recursively {
+        walk_dirs(watch_dir)?.filter_map(Result::ok).collect()
+    } else {
+        fs::read_dir(watch_dir)?.filter_map(Result::ok).collect()
+    };
+
+    entries.par_iter().for_each(|entry| {
+        let path = entry.path();
+
+        // TODO: Handle errors
         if is_svg_file(&path) {
-            convert_svg_to_pdf_and_tex(&path.to_path_buf())?;
+            let _ = convert_svg_to_pdf_and_tex(&path);
         }
-    }
+    });
 
     return Ok(());
 }

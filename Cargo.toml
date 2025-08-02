@@ -1,14 +1,20 @@
 [package]
-name = "inkfigd"
+name = "inkwatch"
 version = "0.1.0"
+authors = ["Semyon Belov sembl.msk@gmail.com"]
 edition = "2024"
+description = "A companion binary for inkfig.nvim that monitors a directory for SVG file changes and autogenerates PDF and LaTeX overlays using Inkscape."
+keywords = ["inkscape", "svg", "latex", "cli", "watcher"]
+categories = ["command-line-utilities", "visualization", "automation", "multimedia::images"]
+license = "MIT"
+repository = "https://github.com/JuTonic/inkfigd"
+readme = "README.md"
 
 [dependencies]
-clap = { version = "4.5.41", features = ["derive"] }
 derive_more = {version = "2.0.1", features = ["from"]}
 log = "0.4.27"
 notify = "8.1.0"
-which = "8.0.0"
+rayon = "1.10.0"
 
 [profile.release]
 opt-level = 3
