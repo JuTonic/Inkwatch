@@ -43,7 +43,12 @@ inkwatch [DIR] (OPTIONS)
 Prerequisites:
 - Rust toolchain (see [rustup](https://rustup.rs/))
 
-Clone the repo and build it:
+Run:
+```
+cargo install inkwatch
+```
+
+Or build locally:
 
 ```bash
 git clone https://github.com/JuTonic/inkwatch.git
