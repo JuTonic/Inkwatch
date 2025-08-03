@@ -1,13 +1,13 @@
 [package]
-name = "inkwatch"
+name = "inktex-watch"
 version = "0.1.0"
 authors = ["Semyon Belov sembl.msk@gmail.com"]
 edition = "2024"
-description = "A companion binary for inkfig.nvim that monitors a directory for SVG file changes and autogenerates PDF and LaTeX overlays using Inkscape."
+description = "A companion binary for inktex.nvim that monitors a directory for SVG file changes and autogenerates PDF and LaTeX overlays using Inkscape."
 keywords = ["inkscape", "svg", "latex", "cli", "watcher"]
 categories = ["command-line-utilities", "visualization", "multimedia::images"]
 license = "MIT"
-repository = "https://github.com/JuTonic/inkfigd"
+repository = "https://github.com/JuTonic/inktex-watch"
 readme = "README.md"
 
 [dependencies]
