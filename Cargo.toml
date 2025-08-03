@@ -1,6 +1,6 @@
 [package]
 name = "inktex-watch"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Semyon Belov sembl.msk@gmail.com"]
 edition = "2024"
 description = "A companion binary for inktex.nvim that monitors a directory for SVG file changes and autogenerates PDF and LaTeX overlays using Inkscape."
