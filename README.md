@@ -1,13 +1,13 @@
-# Inkwatch
+# Inktex-watch
 
-**Inkwatch** is a background CLI tool that watches a directory for changes to SVG files and automatically exports them to PDF and LaTeX overlay files using [Inkscape](https://inkscape.org). It is designed to be used alongside the [inkfig.nvim](https://github.com/JuTonic/inkfig.nvim) plugin to automate figure workflows in LaTeX documents.
+**Inktex-watch** is a background CLI tool that watches a directory for changes to SVG files and automatically exports them to PDF and LaTeX overlay files using [Inkscape](https://inkscape.org). It is designed to be used alongside the [inktex.nvim](https://github.com/JuTonic/inktex.nvim) plugin to automate figure workflows in LaTeX documents.
 
 ## Usage
 
 To start watching the `./figures` directory for changes, simply run:
 
 ```bash
-inkscape ./figures
+inktex-watch ./figures
 ```
 
 Whenever you create or save a file like:
@@ -24,7 +24,7 @@ If you delete `picture.svg`, the corresponding `.pdf` and `.pdf_tex` files will 
 Avaliable options are:
 
 ```
-inkwatch [DIR] (OPTIONS)
+inktex-watch [DIR] (OPTIONS)
 
 [DIR] - REQUIRED
   directory to watch for changes
@@ -45,17 +45,17 @@ Prerequisites:
 
 Run:
 ```
-cargo install inkwatch
+cargo install inktex-watch
 ```
 
 Or build locally:
 
 ```bash
-git clone https://github.com/JuTonic/inkwatch.git
-cd inkwatch
+git clone https://github.com/JuTonic/inktex-watch.git
+cd inktex-watch
 cargo build --release
 ```
-The binary will be created at `./target/release/inkwatch`.
+The binary will be created at `./target/release/inktex-watch`.
 
 To install system-wide run:
 
